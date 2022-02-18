@@ -288,6 +288,13 @@ using unique_defs = map<string, string>;
 
 struct parse_error : public runtime_error {
 
+#ifdef PARSER_COMBINATORS_STRUCTURED_PARSE_ERROR
+    string _what;
+    size_t _offset_start;
+    size_t _len;
+    string _expecting;
+#endif
+    
     template <typename Parser, typename Iterator, typename Range>
     static string message(string const& what, Parser const& p,
         Iterator const &f, Iterator const &l, Range const &r
@@ -331,8 +338,7 @@ struct parse_error : public runtime_error {
         err << '^';
         ++i;
 
-        if (i != l) {
-            ++i;
+        if (f != l) {
             while (i != l) {
                 err << '-';
                 ++i;
@@ -341,7 +347,16 @@ struct parse_error : public runtime_error {
         }
         
         err << endl << "expecting: ";
-       
+        
+        err << expecting(p);
+
+        return err.str();
+    }
+    
+    template <typename Parser>
+    static string expecting(Parser const& p) {
+        stringstream err;
+
         unique_defs defs;
         err << p.ebnf(&defs) << endl << "where:" << endl;
 
@@ -351,11 +366,18 @@ struct parse_error : public runtime_error {
 
         return err.str();
     }
-
+    
     template <typename Parser, typename Iterator, typename Range>
     parse_error(string const& what, Parser const& p,
         Iterator const &f, Iterator const &l, Range const &r
-    ) : runtime_error(message(what, p, f, l, r)) {}
+    ) : runtime_error(message(what, p, f, l, r))
+#ifdef PARSER_COMBINATORS_STRUCTURED_PARSE_ERROR
+        ,
+        _what(what), _offset_start(f-r.first), _len(l-f), _expecting(expecting(p))
+#endif
+    
+    
+    {}
 };
 
 //============================================================================
@@ -422,7 +444,7 @@ template <typename P1, typename P2> struct least_general <P1, P2,
 //----------------------------------------------------------------------------
 // Concatenate multiple string template arguments into a single string.
 
-string concat(string const& sep, string const& str) {
+inline string concat(string const& sep, string const& str) {
     return str;
 }
 
@@ -517,8 +539,10 @@ public:
         string *result = nullptr,
         Inherit* st = nullptr
     ) const {
+        Iterator const first = i;
         for (auto j = s; *j != 0;  ++j) {
             if (i == r.last || *i != *j) {
+                i = first;
                 return false;
             }
             ++i;
